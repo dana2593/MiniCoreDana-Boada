@@ -22,7 +22,7 @@ jobs:
   deploy-frontend:
     name: Build & Deploy Frontend
     runs-on: ubuntu-latest
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
+    environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'noprod' }}
     defaults:
       run:
         working-directory: frontend
