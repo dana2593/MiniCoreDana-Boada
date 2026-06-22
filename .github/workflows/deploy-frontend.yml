@@ -1,0 +1,94 @@
+name: Deploy Frontend to Web App
+
+"on":
+  push:
+    branches:
+      - "feature/**"
+      - develop
+      - main
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  NODE_VERSION: "22.x"
+
+jobs:
+  deploy-frontend:
+    name: Build & Deploy Frontend
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Mostrar contexto de build
+        run: |
+          echo "Rama: ${{ github.ref_name }}"
+          echo "App Name: ${{ vars.WEBAPP_NAME }}"
+          echo "API URL: ${{ vars.API_URL }}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install & Build
+        env:
+          VITE_API_URL: ${{ vars.API_URL }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Prepare runtime package (includes serve)
+        run: |
+          set -euo pipefail
+          mkdir -p site
+          cp -R dist site/dist
+          cat > site/package.json <<'EOF'
+          {
+            "name": "minicore-portal",
+            "private": true,
+            "dependencies": {
+              "serve": "^14.0.1"
+            },
+            "scripts": {
+              "start": "node ./node_modules/serve/build/main.js -s dist --listen $PORT"
+            }
+          }
+          EOF
+          cd site
+          npm install --omit=dev --production
+          echo "Site ready:"
+          ls -la
+
+      - name: Create deployment package
+        run: |
+          cd site
+          zip -r ../deploy.zip .
+          cd ..
+          echo "Package created:"
+          ls -lh deploy.zip
+
+      - name: Deploy to Azure Web App
+        if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+        uses: azure/webapps-deploy@122b7ec46017e53a3f71e3a027d67550a1641f5e
+        with:
+          app-name: ${{ vars.WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: frontend/deploy.zip
+
+      - name: Deployment Summary
+        run: |
+          echo "Deploy completado en ${{ job.environment.name }}"
+          echo "App: ${{ vars.WEBAPP_NAME }}"
